@@ -1,0 +1,33 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+
+# Database
+data/gym.db
+data/gym.db-shm
+data/gym.db-wal
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Media (keep directory, ignore large files)
+media/*.jpg
+media/*.png
+media/*.mp4
+media/*.mov
+!media/.gitkeep
