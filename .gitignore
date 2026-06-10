@@ -15,6 +15,9 @@ data/gym.db
 data/gym.db-shm
 data/gym.db-wal
 
+# Claude Code (local settings only — CLAUDE.md is committed)
+.claude/
+
 # IDE
 .idea/
 .vscode/
