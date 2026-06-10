@@ -87,6 +87,8 @@ Claude can **chain tools** across turns — a user says "when is yoga?" followed
 
 ## 🚀 Quick Start
 
+> 📖 **Complete step-by-step guide with screenshots?** See **[GET_STARTED.md](GET_STARTED.md)** — walks you through every step from zero to a working bot.
+
 ### Prerequisites
 - Python 3.12+
 - [Anthropic API key](https://console.anthropic.com/)
@@ -98,7 +100,7 @@ Claude can **chain tools** across turns — a user says "when is yoga?" followed
 ```bash
 git clone https://github.com/amitsehgal29/whatsappagent
 cd whatsappagent
-cp .env.example .env   # then edit .env with your real keys
+# Edit .env with your API keys (see GET_STARTED.md for where to get them)
 ```
 
 ### 2. Install
