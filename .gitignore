@@ -15,8 +15,9 @@ data/gym.db
 data/gym.db-shm
 data/gym.db-wal
 
-# Claude Code (local settings only — CLAUDE.md is committed)
+# Claude Code
 .claude/
+CLAUDE.md
 
 # IDE
 .idea/
