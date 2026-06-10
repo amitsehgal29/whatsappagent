@@ -128,6 +128,9 @@ async def _upload_media(file_path: str | Path, mime_type: str) -> str:
 
     async with httpx.AsyncClient() as client:
         # WhatsApp requires multipart/form-data for media uploads.
+        # NOTE: open() is synchronous I/O — fine for occasional trainer images
+        # (files are small, uploaded rarely).  For high-throughput media uploads
+        # use aiofiles or run_in_executor to avoid blocking the event loop.
         with open(path, "rb") as fh:
             resp = await client.post(
                 _MEDIA_URL,

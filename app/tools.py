@@ -114,6 +114,9 @@ async def execute_tool(name: str, inputs: dict[str, Any], phone: str) -> str:
 
     Media tools (send_trainer_profiles) return a sentinel string that the
     agent loop handles by calling ``whatsapp.send_image()`` asynchronously.
+
+    Declared ``async`` so the agent loop can ``await`` it; the synchronous
+    tool implementations are executed inline since they're fast I/O.
     """
     if name == "search_knowledge_base":
         return search_knowledge_base(**inputs)

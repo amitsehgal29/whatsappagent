@@ -34,10 +34,23 @@ _embedder = SentenceTransformer("all-MiniLM-L6-v2")
 # ---------------------------------------------------------------------------
 # Corpus ingestion
 # ---------------------------------------------------------------------------
-_raw = KNOWLEDGE_PATH.read_text(encoding="utf-8")
+try:
+    _raw = KNOWLEDGE_PATH.read_text(encoding="utf-8")
+except FileNotFoundError:
+    raise FileNotFoundError(
+        f"Knowledge corpus not found at {KNOWLEDGE_PATH}. "
+        "Create a data/knowledge.txt file with your gym information "
+        "(one paragraph per chunk, separated by blank lines)."
+    ) from None
 
 # Paragraphs separated by blank lines become individual searchable chunks.
 _chunks: list[str] = [c.strip() for c in _raw.split("\n\n") if c.strip()]
+
+if not _chunks:
+    raise ValueError(
+        f"No content found in {KNOWLEDGE_PATH}. "
+        "Add gym information as paragraphs separated by blank lines."
+    )
 
 # Encode every chunk to a unit vector.  L2-normalisation makes the inner
 # product (dot product) identical to cosine similarity.

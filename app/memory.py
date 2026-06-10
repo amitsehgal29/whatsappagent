@@ -23,8 +23,13 @@ class ConversationMemory:
     # -- retrieval ------------------------------------------------------------
 
     def get(self, phone: str) -> list[dict[str, Any]]:
-        """Return the full history for *phone*, or an empty list."""
-        return self._store.setdefault(phone, [])
+        """Return the full history for *phone*, or an empty list.
+
+        Uses ``dict.get`` rather than ``dict.setdefault`` to avoid creating
+        a permanent empty entry for every new phone number that contacts
+        the bot (which would cause unbounded memory growth).
+        """
+        return self._store.get(phone, [])
 
     # -- mutation -------------------------------------------------------------
 

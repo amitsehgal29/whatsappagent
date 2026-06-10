@@ -1,24 +1,27 @@
 """
 FastAPI webhook server.
 
-Provides two endpoints consumed by the Meta WhatsApp Cloud API:
+Endpoints:
 
-  GET  /webhook   — verification handshake (hub.challenge)
-  POST /webhook   — incoming message events
+  GET  /health   — Docker / load-balancer healthcheck
+  GET  /webhook  — WhatsApp verification handshake (hub.challenge)
+  POST /webhook  — incoming WhatsApp message events
 
 On startup the server initialises the SQLite database and seeds demo data.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
-from fastapi import FastAPI, Request
+from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.responses import PlainTextResponse, JSONResponse
 
 from app.agent import run_agent
 from app.config import WHATSAPP_VERIFY_TOKEN
 from app.db import init_db
+from app.models import RateLimiter
 from app.whatsapp import send_text
 
 # ---------------------------------------------------------------------------
@@ -32,6 +35,9 @@ app = FastAPI(
 
 _log = logging.getLogger("uvicorn")
 
+# Sliding-window rate limiter: max 5 messages per 10-second window per phone.
+_rate_limiter = RateLimiter(max_requests=5, window_seconds=10.0)
+
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
@@ -42,6 +48,17 @@ def _startup() -> None:
     """Initialise the database and seed demo data before accepting requests."""
     init_db()
     _log.info("Database initialised and seeded.")
+
+
+# ---------------------------------------------------------------------------
+# Healthcheck
+# ---------------------------------------------------------------------------
+
+
+@app.get("/health")
+async def health() -> PlainTextResponse:
+    """Simple healthcheck — always returns 200."""
+    return PlainTextResponse("ok")
 
 
 # ---------------------------------------------------------------------------
@@ -75,8 +92,12 @@ async def webhook_verify(request: Request) -> PlainTextResponse:
 
 
 @app.post("/webhook")
-async def webhook_handler(request: Request) -> JSONResponse:
+async def webhook_handler(request: Request, background: BackgroundTasks) -> JSONResponse:
     """Receive a WhatsApp message event and return the agent's reply.
+
+    Returns HTTP 200 immediately to satisfy Meta's 20-second webhook
+    timeout, then processes the message asynchronously in the background.
+    This prevents duplicate processing when Meta retries a timed-out request.
 
     Expected payload structure (Meta Graph API v25.0)::
 
@@ -98,7 +119,9 @@ async def webhook_handler(request: Request) -> JSONResponse:
     # Drill into the nested payload.
     try:
         value = payload["entry"][0]["changes"][0]["value"]
-    except (KeyError, IndexError):
+    except (KeyError, IndexError, TypeError):
+        _log.warning("Unrecognised webhook payload structure: %s",
+                      str(payload)[:500])
         return JSONResponse({"status": "ignored"}, status_code=200)
 
     # Filter out status callbacks (sent / delivered / read) — these have no
@@ -121,10 +144,48 @@ async def webhook_handler(request: Request) -> JSONResponse:
 
     _log.info("Incoming message from %s: %s", phone, body)
 
-    # Run the agentic tool-use loop.
-    reply = await run_agent(phone, body)
+    # Rate-limit check — return 200 silently so Meta doesn't retry.
+    if not _rate_limiter.is_allowed(phone):
+        _log.warning("Rate limit exceeded for %s", phone)
+        return JSONResponse({"status": "ok"}, status_code=200)
 
-    # Dispatch the reply back to WhatsApp.
-    await send_text(phone, reply)
+    # Process in the background so Meta gets a fast 200 response.  If the
+    # agent takes >20s Meta would otherwise retry the same message, risking
+    # duplicate bookings.
+    background.add_task(_process_message, phone, body)
 
     return JSONResponse({"status": "ok"}, status_code=200)
+
+
+# ---------------------------------------------------------------------------
+# Background message processing
+# ---------------------------------------------------------------------------
+
+async def _process_message(phone: str, body: str) -> None:
+    """Run the agent loop with a timeout and send the reply back.
+
+    Called as a FastAPI background task so the webhook handler can return
+    immediately.
+    """
+    try:
+        reply = await asyncio.wait_for(
+            run_agent(phone, body),
+            timeout=25.0,
+        )
+    except asyncio.TimeoutError:
+        _log.error("Agent timed out for %s", phone)
+        reply = (
+            "I'm sorry, I'm taking longer than expected. "
+            "Please try again or contact the front desk."
+        )
+    except Exception:
+        _log.exception("Agent failed for %s", phone)
+        reply = (
+            "Something went wrong on our end. "
+            "Please try again in a moment."
+        )
+
+    try:
+        await send_text(phone, reply)
+    except Exception:
+        _log.exception("Failed to send WhatsApp reply to %s", phone)

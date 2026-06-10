@@ -154,8 +154,24 @@ def get_next_class(class_type: str) -> list[dict[str, Any]]:
 
 
 def insert_trial_booking(phone: str, date_val: str, time_val: str, name: str = "") -> int:
-    """Create a trial booking and return the new row ID."""
+    """Create a trial booking and return the new row ID.
+
+    Prevents duplicate bookings: same phone + date + time is rejected.
+    """
     conn = get_conn()
+
+    # Guard against double-tap (Meta may retry delivered-but-unacked messages).
+    existing = conn.execute(
+        "SELECT id FROM trial_bookings WHERE phone = ? AND date = ? AND time = ?",
+        (phone, date_val, time_val),
+    ).fetchone()
+    if existing:
+        conn.close()
+        raise ValueError(
+            f"You already have a trial booked on {date_val} at {time_val}. "
+            f"If you need to change it, please contact the front desk."
+        )
+
     cur = conn.execute(
         "INSERT INTO trial_bookings (phone, name, date, time) VALUES (?, ?, ?, ?)",
         (phone, name, date_val, time_val),
@@ -167,8 +183,42 @@ def insert_trial_booking(phone: str, date_val: str, time_val: str, name: str = "
 
 
 def insert_class_registration(phone: str, class_id: int) -> int:
-    """Register a member for a class and return the new row ID."""
+    """Register a member for a class and return the new row ID.
+
+    Enforces capacity limits and prevents duplicate registrations.
+    """
     conn = get_conn()
+
+    # Check capacity.
+    row = conn.execute(
+        "SELECT capacity FROM class_schedule WHERE id = ?",
+        (class_id,),
+    ).fetchone()
+    if not row:
+        conn.close()
+        raise ValueError(f"Class #{class_id} does not exist.")
+
+    capacity = row["capacity"]
+    taken = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM class_registrations WHERE class_id = ?",
+        (class_id,),
+    ).fetchone()["cnt"]
+    if taken >= capacity:
+        conn.close()
+        raise ValueError(
+            f"Sorry, class #{class_id} is full ({taken}/{capacity}). "
+            f"Try a different time slot or class type."
+        )
+
+    # Prevent duplicate registration.
+    existing = conn.execute(
+        "SELECT id FROM class_registrations WHERE phone = ? AND class_id = ?",
+        (phone, class_id),
+    ).fetchone()
+    if existing:
+        conn.close()
+        raise ValueError("You are already registered for this class.")
+
     cur = conn.execute(
         "INSERT INTO class_registrations (phone, class_id) VALUES (?, ?)",
         (phone, class_id),

@@ -38,7 +38,9 @@ USER appuser
 # -- runtime -------------------------------------------------------------
 EXPOSE 8000
 
+# Healthcheck uses a dedicated endpoint that doesn't require a matching
+# verify token — avoids coupling the healthcheck to the user's .env value.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/webhook?hub.mode=subscribe\&hub.challenge=healthcheck\&hub.verify_token=test || exit 1
+    CMD curl -f http://localhost:8000/health || exit 1
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

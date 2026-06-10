@@ -61,10 +61,6 @@ async def run_agent(phone: str, user_message: str) -> str:
     the full tool-calling loop for *phone* and persists the conversation
     history in memory so subsequent messages maintain context.
     """
-    # -- send trainer images inline if Claude requests it --------------------
-    if _is_media_sentinel(user_message):
-        return await _handle_media_request(phone)
-
     _memory.add_user_message(phone, user_message)
     history = _memory.get(phone)
 
@@ -155,10 +151,3 @@ async def _handle_media_request(phone: str) -> str:
         "Marcus leads yoga, HIIT, and mobility. Both offer one-on-one sessions.",
     )
     return f"trainer_profiles_sent:{len(trainer_images)}_images"
-
-
-def _is_media_sentinel(text: str) -> bool:
-    """Return True if *text* is a synthetic media-delivery sentinel rather
-    than a real user message.  Used internally to inject media sends into
-    the conversation flow without exposing them to Claude."""
-    return text.startswith("MEDIA_SEND:")

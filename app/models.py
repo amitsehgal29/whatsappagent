@@ -1,57 +1,53 @@
 """
-Pydantic models for request validation and structured data interchange.
+Per-phone rate limiter.
 
-These models provide runtime type-checking and serialisation boundaries
-between the webhook transport layer and the agent's internal logic.
+Protects against abuse (rapid-fire messages burning API credits) and enforces
+fair-usage limits.  Uses a simple sliding-window counter keyed by phone number.
+
+Production deployments should replace this with a Redis-backed implementation
+that works across multiple workers.
 """
 
 from __future__ import annotations
 
-from typing import Any, Optional
-
-from pydantic import BaseModel, Field
-
-
-class WebhookMessage(BaseModel):
-    """A WhatsApp message extracted from the webhook payload."""
-
-    phone: str = Field(..., description="Sender phone number in E.164 format")
-    body: str = Field(default="", description="Message text body (empty for media)")
-    message_id: str = Field(default="", description="WhatsApp message ID")
+import time
+from collections import defaultdict
 
 
-class MemberRecord(BaseModel):
-    """A row from the members table."""
+class RateLimiter:
+    """In-memory sliding-window rate limiter.
 
-    id: int
-    phone: str
-    name: str
-    plan: str
-    expiry: str
+    Parameters
+    ----------
+    max_requests : int
+        Maximum requests allowed in the window.
+    window_seconds : float
+        Sliding window duration in seconds.
+    """
 
+    def __init__(self, max_requests: int = 5, window_seconds: float = 10.0) -> None:
+        self._max = max_requests
+        self._window = window_seconds
+        self._buckets: dict[str, list[float]] = defaultdict(list)
 
-class ClassRecord(BaseModel):
-    """A row from the class_schedule table."""
+    def is_allowed(self, phone: str) -> bool:
+        """Return True if *phone* is within their rate limit."""
+        now = time.monotonic()
+        bucket = self._buckets[phone]
 
-    id: int
-    class_type: str
-    date: str
-    time: str
-    instructor: str
-    capacity: int
+        # Expire old timestamps outside the window.
+        cutoff = now - self._window
+        while bucket and bucket[0] < cutoff:
+            bucket.pop(0)
 
+        if len(bucket) >= self._max:
+            return False
 
-class TrialBooking(BaseModel):
-    """A trial class booking request payload."""
+        bucket.append(now)
 
-    phone: str
-    name: Optional[str] = None
-    date: str
-    time: str
+        # Clean up empty buckets periodically to prevent unbounded growth.
+        # (Same memory-leak pattern as the old ConversationMemory — fixed here.)
+        if not bucket:
+            del self._buckets[phone]
 
-
-class ToolInput(BaseModel):
-    """Generic envelope for tool-call inputs dispatched by the agent loop."""
-
-    tool_name: str
-    arguments: dict[str, Any] = Field(default_factory=dict)
+        return True

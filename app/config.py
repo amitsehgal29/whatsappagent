@@ -6,11 +6,13 @@ as module-level constants for import by other application modules.
 """
 
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load .env from the project root (parent of app/)
-load_dotenv()
+# Load .env from the project root (parent of app/) — explicit path so the
+# server works regardless of which directory it was started from.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # -- Anthropic / Claude -------------------------------------------------------
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
